@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <!-- フラグメントシェーダのソースコード -->
+    <script id="fs" type="xs/fs">
+      // フラグメントシェーダには時間の経過がtimeに秒単位で、
+      // スクリーン解像度がresolutionにピクセル単位で入ってくる
+      precision mediump float;
+      uniform float time;
+      uniform vec2  resolution;
+
+      // HSV色空間を使うための関数
+      vec3 hsv(float h, float s, float v){
+        vec4 t = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+        vec3 p = abs(fract(vec3(h) + t.xyz) * 6.0 - vec3(t.w));
+        return v * mix(vec3(t.x), clamp(p - vec3(t.x), 0.0, 1.0), s);
+      }
+
+      // ジュリア集合を描くためのフラグメントシェーダ
+      void main(void){
+        vec2 p = (gl_FragCoord.xy * 2.0 - resolution) / max(resolution.x, resolution.y);
+        int j = 0;
+        vec2 x = vec2(-0.345, 0.654);     // この辺変えると……
+        vec2 y = vec2(time * 0.005, 0.0); // いろいろ変わるかも
+        vec2 z = p;
+        for(int i = 0; i < 360; i++){
+          j++;
+          if(length(z) > 2.0){break;}
+          z = vec2(z.x * z.x - z.y * z.y, 2.0 * z.x * z.y) + x + y;
+        }
+        float h = abs(mod(time * 15.0 - float(j), 360.0) / 360.0);
+        gl_FragColor = vec4(hsv(h, 1.0, 1.0), 1.0);
+      }
+    </script>
+    <!-- 頂点シェーダのソースコード -->
+    <script id="vs" type="xs/vs">
+      // 頂点シェーダには一切手入れする必要なし
+      attribute vec3 position;
+      void main(void){
+        gl_Position = vec4(position, 1.0);
+      }
+    </script>
+    <script>
+      // オンロードイベントがエントリポイント
+      window.onload = function(){
+        // 変数宣言
+        var a, b, c, d, e, f, g, h, p, t, u, v, w, x, y, z;
+
+        // document.getElementByIdをローカル変数に
+        b = function(s){return document.getElementById(s)};
+
+        // ウィンドウオブジェクト
+        w = window;
+
+        // ESCキーで描画を止めるためのイベントハンドラ
+        w.addEventListener('keydown', k, true);
+
+        // HTMLドキュメント内のcanvasへの参照
+        c = b('c');
+
+        // WebGLコンテキストの取得
+        g = c.getContext('webgl');
+
+        // プログラムオブジェクトの生成
+        p = g.createProgram();
+
+        // シェーダ生成関数
+        h = function(i, j){
+          // シェーダオブジェクト生成
+          k = g.createShader(g.VERTEX_SHADER - i);
+
+          // ソースの割り当て
+          g.shaderSource(k, j);
+
+          // シェーダのコンパイル
+          g.compileShader(k);
+
+          // シェーダのアタッチ
+          g.attachShader(p, k);
+
+          // ログをリターン
+          return g.getShaderInfoLog(k);
+        }
+
+        // シェーダのコンパイルとリンク
+        if(!h(0, b('vs').text) && !h(1, b('fs').text)){g.linkProgram(p);}
+
+        // シェーダのリンクステータスをチェック
+        e = g.getProgramParameter(p, g.LINK_STATUS);
+
+        // プログラムオブジェクトの有効化
+        g.useProgram(p);
+
+        // uniformLocation格納用にオブジェクトを定義
+        u = {};
+
+        // uniform変数timeのロケーション取得
+        u.time = g.getUniformLocation(p, 'time');
+
+        // uniform変数resolutionのロケーション取得
+        u.resolution = g.getUniformLocation(p, 'resolution');
+
+        // VBO用のバッファオブジェクトを生成
+        g.bindBuffer(g.ARRAY_BUFFER, g.createBuffer());
+
+        // VBOに頂点データを登録
+        g.bufferData(g.ARRAY_BUFFER, new Float32Array([-1,1,0,-1,-1,0,1,1,0,1,-1,0]), g.STATIC_DRAW);
+
+        // attributeロケーション取得
+        a = g.getAttribLocation(p, 'position');
+
+        // attribute有効化
+        g.enableVertexAttribArray(a);
+        g.vertexAttribPointer(a, 3, g.FLOAT, false, 0, 0);
+
+        // 初期化時の色を黒に指定
+        g.clearColor(0, 0, 0, 1);
+
+        // 動作開始時間を取得（時間の経過を調べるため）
+        z = new Date().getTime();
+
+        // 無名関数でメインルーチンを実行
+        (function(){
+          // シェーダのリンクに失敗していたら実行しない
+          if(!e){return;}
+
+          // ビューポートを動的に指定する
+          c.width = x = w.innerWidth;
+          c.height = y = w.innerHeight;
+          g.viewport(0, 0, x, y);
+
+          // 時間の経過を調べる
+          d = (new Date().getTime() - z) * 0.001;
+
+          // フレームバッファをクリア
+          g.clear(g.COLOR_BUFFER_BIT);
+
+          // uniform変数をプッシュ
+          g.uniform1f(u.time, d);
+          g.uniform2fv(u.resolution, [x, y]);
+
+          // プリミティブのレンダリング
+          g.drawArrays(g.TRIANGLE_STRIP, 0, 4);
+          g.flush();
+
+          // 再起
+          requestAnimationFrame(arguments.callee);
+        })();
+
+        // keydownに登録する関数
+        function k(h){e = (h.keyCode !== 27);}
+      };
+    </script>
+    <style>
+      /* ウィンドウ全体にcanvasをぴったり配置するためのStyle */
+      * {
+        margin:0;
+        padding:0;
+        overflow:hidden;
+      }
+      html,body{
+        height:100%;
+      }
+    </style>
+    <title>your demo title</title>
+  </head>
+  <body>
+    <canvas id="c"></canvas>
+  </body>
+</html>

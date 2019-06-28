@@ -1,0 +1,274 @@
+
+<!-- saved from url=(0065)https://s3-ap-northeast-1.amazonaws.com/poderosa/2D_practice.html -->
+<html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+		
+		<title>WebGL Practice</title>
+		<script type="text/javascript">
+		
+//Vertex Buffer Object作成
+function VBuf2D() {
+  this.vertexes = new Array();
+  this.indices = new Array();
+  this.count = 0;
+  this.appendVertex = function(vx, vy, ix, iy) {
+    var p = this.count*2;
+    this.vertexes[p] = vx;
+    this.vertexes[p+1] = vy;
+    this.indices[p] = parseFloat(ix);
+    this.indices[p+1] = parseFloat(iy);
+    this.count= this.count+1;
+    return this.count;
+  };
+}
+//Index Buffer Object
+function IBuf() {
+  this.indices = new Array();
+  this.count = 0;
+  this.appendPolygon = function(i,j,k) {
+    var p = this.count*3;
+    this.indices[p] = i;
+    this.indices[p+1] = j;
+    this.indices[p+2] = k;
+    this.count = this.count+1;
+    return this.count;
+  }
+}
+
+function create_shader(gl, id){
+	var shader;
+	var scriptElement = document.getElementById(id);
+	switch(scriptElement.type){
+		case 'x-shader/x-vertex':
+			shader = gl.createShader(gl.VERTEX_SHADER);
+			break;
+		case 'x-shader/x-fragment':
+			shader = gl.createShader(gl.FRAGMENT_SHADER);
+			break;
+		default :
+			console.log("unknown shader type " + id);
+			return;
+	}
+	gl.shaderSource(shader, scriptElement.text);
+	gl.compileShader(shader);
+	if(gl.getShaderParameter(shader, gl.COMPILE_STATUS)){
+		return shader; //OK
+	}else{
+		alert(gl.getShaderInfoLog(shader)); //compile error
+	}
+}
+
+function create_program(gl, vs, fs){
+	var program = gl.createProgram();
+	gl.attachShader(program, vs);
+	gl.attachShader(program, fs);
+	gl.linkProgram(program);
+	if(gl.getProgramParameter(program, gl.LINK_STATUS)){
+		gl.useProgram(program); //OK
+		return program;
+	}else{
+		alert(gl.getProgramInfoLog(program)); //link error
+	}
+}
+
+
+//Static PartのVertex用Bufferたち
+function StaticVertexBuffers(gl, vbuf, ibuf) {
+	function create_vbo(data){
+		var vbo = gl.createBuffer();
+		gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+		gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
+		gl.bindBuffer(gl.ARRAY_BUFFER, null);
+		return vbo;
+	}
+	function create_ibo(data){
+		var ibo = gl.createBuffer();
+		gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
+		gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Int16Array(data), gl.STATIC_DRAW);
+		gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+		return ibo;
+	}
+	var pos_vbo = create_vbo(vbuf.vertexes);
+	var idx_vbo = create_vbo(vbuf.indices);
+	
+	this.vboArray = function() { return [pos_vbo, idx_vbo]; };
+	this.iboLength = ibuf.count;
+	this.createIBO = function() { //VBOをアタッチした状態でcreateIBOをしなければいけない
+		this.ibo = create_ibo(ibuf.indices);
+	};
+}
+//シェーダのAttributeのリスト。名前配列とストライドを受け取る
+function AttrList(gl, prg, names, strides) {
+	this.program = prg;
+	this.names = names;
+	this.strides = strides;
+	this.locations = new Array(names.length);
+	for(var i in names) {
+		this.locations[i] = gl.getAttribLocation(prg, names[i]);
+	}
+	this.set_attribute = function(vbo_list) {
+		for(var i in vbo_list){
+			gl.bindBuffer(gl.ARRAY_BUFFER, vbo_list[i]);
+			gl.enableVertexAttribArray(this.locations[i]);
+			gl.vertexAttribPointer(this.locations[i], this.strides[i], gl.FLOAT, false, 0, 0);
+		}
+	};
+}
+function UniformList(gl, prg, names) {
+	this.program = prg;
+	this.names = names;
+	this.locations = new Array(names.length);
+	for(var i in names) {
+		var c = gl.getUniformLocation(prg, names[i]);
+		this.locations[i] = c;
+		this[names[i]] = c; //名前からも引ける
+	}
+}
+
+//canvas１枚ごとの収録
+function GL2D(gl, fsname, x_count, y_count, uniform_list) {
+	var v_shader = create_shader(gl, 'vs');
+	var f_shader = create_shader(gl, fsname);
+	this.program = create_program(gl, v_shader, f_shader);
+	
+	this.setup = function() {
+		this.vtxAttrs = new AttrList(gl, this.program, ["vPosition","vIndex"], [2,2]);
+		this.vtxUniforms = new UniformList(gl, this.program, uniform_list);
+		var vbuf = new VBuf2D();
+		var ibuf = new IBuf();
+		var pitchX = 2.0 / x_count;
+		var pitchY = 2.0 / y_count;
+		for(var j=0; j<y_count; j++) {
+			var y = -1.0 + pitchY * j;
+			for(var i=0; i<x_count; i++) {
+				var x = -1.0 + pitchX * i;
+				var c = vbuf.count;
+				vbuf.appendVertex(x, y+pitchY, i, j);
+				vbuf.appendVertex(x+pitchX,  y+pitchY, i, j);
+				vbuf.appendVertex(x+pitchX, y, i, j);
+				vbuf.appendVertex(x, y, i, j);
+				ibuf.appendPolygon(c,c+1,c+2);
+				ibuf.appendPolygon(c,c+2,c+3);
+			}
+		}
+		this.staticVertices = new StaticVertexBuffers(gl, vbuf, ibuf);
+		this.vtxAttrs.set_attribute(this.staticVertices.vboArray());
+		this.staticVertices.createIBO();
+		this.renderCount = 0;
+	};
+	this.render = function() {
+		gl.enable(gl.DEPTH_TEST);
+		gl.enable(gl.BLEND);
+	    gl.depthMask(true);
+		gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE);
+		// canvasを初期化
+		gl.clearColor(0.0, 0.0, 0.0, 1.0);
+		gl.clearDepth(1.0);
+		gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+		gl.useProgram(this.program);
+		
+		gl.uniform1f(this.vtxUniforms.count, x_count);
+		if(this.vtxUniforms.timer) gl.uniform1f(this.vtxUniforms.timer, this.renderCount);
+		this.vtxAttrs.set_attribute(this.staticVertices.vboArray());
+		gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.staticVertices.ibo);
+		gl.drawElements(gl.TRIANGLES, this.staticVertices.iboLength*3, gl.UNSIGNED_SHORT, 0);
+
+		gl.flush();
+		this.renderCount = this.renderCount+1;
+	};
+}
+
+onload = function(){
+	function prepare(canvas_id, fsname, x_count, y_count, uniform_list) {
+		var c = document.getElementById(canvas_id);
+		var gl = c.getContext("webgl");
+		c.glview = new GL2D(gl, fsname, x_count, y_count, uniform_list);
+		c.glview.setup();
+		return c;
+	}
+	var canvas_list = [
+		prepare("cv1", "fs1", 10, 1, ["count"]),
+		prepare("cv2", "fs2", 10, 1, ["count"]),
+		prepare("cv3", "fs3", 10, 10, ["count"]),
+		prepare("cv4", "fs4", 50, 50, ["count", "timer"])
+	];
+
+	// 恒常ループ
+	(function(){
+		for(i in canvas_list)
+			canvas_list[i].glview.render();
+
+		// ループのために再帰呼び出し
+		setTimeout(arguments.callee, 1000 / 30);
+	})();
+	
+	
+
+};		</script>
+
+<script id="fs1" type="x-shader/x-fragment">
+precision mediump float;
+varying vec2 index;
+uniform float count;
+void main(void){
+	float c = index.x / count;
+	gl_FragColor = vec4(c,c,c,1.0);
+}
+</script>
+<script id="fs2" type="x-shader/x-fragment">
+precision mediump float;
+varying vec2 index;
+uniform float count;
+void main(void){
+	float c = index.x / count;
+	if(mod(index.x, 2.0) == 0.0)
+		gl_FragColor = vec4(c,0,0,1.0);
+	else
+		gl_FragColor = vec4(0,0,c,1.0);
+}
+</script>
+<script id="fs3" type="x-shader/x-fragment">
+precision mediump float;
+varying vec2 index;
+uniform float count;
+void main(void){
+	gl_FragColor = vec4(index.x / count,0,index.y / count,1.0);
+}
+</script>
+<script id="fs4" type="x-shader/x-fragment">
+precision mediump float;
+varying vec2 index;
+uniform float count;
+uniform float timer;
+void main(void){
+	float cx = mod(index.x / count + timer*0.01, 2.0);
+	float cy = mod(index.y / count + timer*0.01, 2.0);
+	cx = cx>1.0? 2.0-cx : cx;
+	cy = cy>1.0? 2.0-cy : cy;
+	gl_FragColor = vec4(cx,0, cy,1.0);
+}
+</script>
+<script id="vs" type="x-shader/x-vertex">
+attribute vec2 vPosition;
+attribute vec2 vIndex;
+varying vec2 index;
+
+void main() {
+  gl_Position = vec4(vPosition, 0, 1);
+  index = vIndex;
+}
+</script>
+	</head>
+	<body>
+		<p id="sample1">サンプル１　0～9の番号を振ってグレースケール</p>
+		<canvas id="cv1" width="500" height="200"></canvas>
+		<hr>
+		<p id="sample2">サンプル２　if文の分岐で赤と青のシマシマ</p>
+		<canvas id="cv2" width="500" height="200"></canvas>
+		<hr>
+		<p id="sample3">サンプル３　２次元の10*10でグラデーション</p>
+		<canvas id="cv3" width="500" height="500"></canvas>
+		<hr>
+		<p id="sample4">サンプル４　さらに50*50にしたうえでアニメーション</p>
+		<canvas id="cv4" width="500" height="500"></canvas>
+	
+</body></html>
